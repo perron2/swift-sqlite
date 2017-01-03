@@ -1,14 +1,14 @@
 import Foundation
 
-private let SQLITE_STATIC = unsafeBitCast(0, sqlite3_destructor_type.self)
-private let SQLITE_TRANSIENT = unsafeBitCast(-1, sqlite3_destructor_type.self)
+private let SQLITE_STATIC = unsafeBitCast(0, to: sqlite3_destructor_type.self)
+private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 class Database {
     let file: String
 
     struct TransactionContext {
-        private var db: Database
-        private var cancelled: Bool
+        fileprivate var db: Database
+        fileprivate var cancelled: Bool
 
         mutating func cancel() {
             if !cancelled {
@@ -19,10 +19,10 @@ class Database {
     }
 
     init(name: String) throws {
-        let path = NSSearchPathForDirectoriesInDomains(.DocumentDirectory, .UserDomainMask, true).first!
+        let path = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
         file = path + "/" + name
         if sqlite3_open(file, &db) != SQLITE_OK {
-            throw DatabaseError(db)
+            throw DatabaseError(db!)
         }
     }
 
@@ -71,21 +71,21 @@ class Database {
         }
     }
 
-    static func drop(name: String) {
-        let path = NSSearchPathForDirectoriesInDomains(.DocumentDirectory, .UserDomainMask, true).first!
+    static func drop(_ name: String) {
+        let path = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
         let file = path + "/" + name
         do {
-            try NSFileManager.defaultManager().removeItemAtPath(file)
+            try FileManager.default.removeItem(atPath: file)
         } catch {
             print("Cannot drop database \(file): \(error)")
         }
     }
 
-    func quote(str: String) -> String {
-        return "'" + str.stringByReplacingOccurrencesOfString("'", withString: "''") + "'"
+    func quote(_ str: String) -> String {
+        return "'" + str.replacingOccurrences(of: "'", with: "''") + "'"
     }
 
-    func transaction(block: () throws -> Void) throws {
+    func transaction(_ block: () throws -> Void) throws {
         try execute("begin transaction")
         do {
             try block()
@@ -96,7 +96,7 @@ class Database {
         }
     }
 
-    func transaction(block: (inout TransactionContext) throws -> Void) throws -> Bool {
+    func transaction(_ block: (inout TransactionContext) throws -> Void) throws -> Bool {
         var context = TransactionContext(db: self, cancelled: false)
         try execute("begin transaction")
         do {
@@ -112,7 +112,7 @@ class Database {
         }
     }
 
-    func savepoint(name: String = NSUUID().UUIDString, block: () throws -> Void) throws {
+    func savepoint(_ name: String = UUID().uuidString, block: () throws -> Void) throws {
         let name = quote(name)
         let savepoint = "savepoint \(name)"
         try execute(savepoint)
@@ -125,35 +125,35 @@ class Database {
         }
     }
 
-    func selectInteger(sql: String) throws -> Int64 {
-        let stmt = try createStmt(db, sql)
+    func selectInteger(_ sql: String) throws -> Int64 {
+        let stmt = try createStmt(db!, sql)
         defer { sqlite3_finalize(stmt) }
 
         if sqlite3_step(stmt) == SQLITE_ROW {
             return sqlite3_column_int64(stmt, 0)
         } else {
-            throw DatabaseError(db)
+            throw DatabaseError(db!)
         }
     }
 
-    func prepare(sql: String) throws -> DatabaseStatement {
-        return try DatabaseStatement(db, sql)
+    func prepare(_ sql: String) throws -> DatabaseStatement {
+        return try DatabaseStatement(db!, sql)
     }
 
-    func execute(sql: String) throws {
+    func execute(_ sql: String) throws {
         if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
-            throw DatabaseError(db)
+            throw DatabaseError(db!)
         }
     }
 
-    private var db: COpaquePointer = nil
+    private var db: OpaquePointer? = nil
 }
 
 class DatabaseStatement {
-    private var db: COpaquePointer
-    private var stmt: COpaquePointer = nil
+    private var db: OpaquePointer
+    private var stmt: OpaquePointer? = nil
 
-    private init(_ db: COpaquePointer, _ sql: String) throws {
+    fileprivate init(_ db: OpaquePointer, _ sql: String) throws {
         self.db = db
 
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) != SQLITE_OK {
@@ -169,13 +169,13 @@ class DatabaseStatement {
         sqlite3_reset(stmt)
     }
 
-    func bindNull(name: String) {
+    func bindNull(_ name: String) {
         let index = sqlite3_bind_parameter_index(stmt, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
         sqlite3_bind_null(stmt, index)
     }
 
-    func bind(name: String, _ value: Int?) {
+    func bind(_ name: String, _ value: Int?) {
         let index = sqlite3_bind_parameter_index(stmt, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
@@ -186,7 +186,7 @@ class DatabaseStatement {
         }
     }
 
-    func bind(name: String, _ value: Double?) {
+    func bind(_ name: String, _ value: Double?) {
         let index = sqlite3_bind_parameter_index(stmt, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
@@ -197,7 +197,7 @@ class DatabaseStatement {
         }
     }
 
-    func bind(name: String, _ value: Bool?) {
+    func bind(_ name: String, _ value: Bool?) {
         let index = sqlite3_bind_parameter_index(stmt, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
@@ -208,7 +208,7 @@ class DatabaseStatement {
         }
     }
 
-    func bind(name: String, _ value: String?) {
+    func bind(_ name: String, _ value: String?) {
         let index = sqlite3_bind_parameter_index(stmt, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
@@ -219,7 +219,7 @@ class DatabaseStatement {
         }
     }
 
-    func bind(name: String, _ value: NSDate?) {
+    func bind(_ name: String, _ value: Date?) {
         let index = sqlite3_bind_parameter_index(stmt, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
@@ -238,7 +238,7 @@ class DatabaseStatement {
     }
 
     func query() -> DatabaseRows {
-        return DatabaseRows(stmt)
+        return DatabaseRows(stmt!)
     }
 
     func string() throws -> String? {
@@ -249,7 +249,7 @@ class DatabaseStatement {
             if sqlite3_column_type(stmt, Int32(0)) == SQLITE_NULL {
                 return nil
             } else {
-                return String.fromCString(UnsafePointer(sqlite3_column_text(stmt, Int32(0))))
+                return String(cString: UnsafePointer(sqlite3_column_text(stmt, Int32(0))))
             }
         } else {
             throw DatabaseError(db)
@@ -266,7 +266,7 @@ class DatabaseStatement {
 }
 
 class DatabaseRows {
-    init(_ stmt: COpaquePointer) {
+    init(_ stmt: OpaquePointer) {
         self.stmt = stmt
     }
 
@@ -293,11 +293,11 @@ class DatabaseRows {
         }
     }
 
-    func null(column: Int) -> Bool {
+    func null(_ column: Int) -> Bool {
         return sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL
     }
 
-    func null(column: String) -> Bool {
+    func null(_ column: String) -> Bool {
         if let index = nameToIndex[column] {
             return null(index)
         }
@@ -305,7 +305,7 @@ class DatabaseRows {
         return false
     }
 
-    func int(column: Int) -> Int? {
+    func int(_ column: Int) -> Int? {
         if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
@@ -313,7 +313,7 @@ class DatabaseRows {
         }
     }
 
-    func int(column: String) -> Int? {
+    func int(_ column: String) -> Int? {
         if let index = nameToIndex[column] {
             return int(index)
         }
@@ -321,7 +321,7 @@ class DatabaseRows {
         return nil
     }
 
-    func double(column: Int) -> Double? {
+    func double(_ column: Int) -> Double? {
         if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
@@ -329,7 +329,7 @@ class DatabaseRows {
         }
     }
 
-    func double(column: String) -> Double? {
+    func double(_ column: String) -> Double? {
         if let index = nameToIndex[column] {
             return double(index)
         }
@@ -337,7 +337,7 @@ class DatabaseRows {
         return nil
     }
 
-    func bool(column: Int) -> Bool? {
+    func bool(_ column: Int) -> Bool? {
         if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
@@ -345,7 +345,7 @@ class DatabaseRows {
         }
     }
 
-    func bool(column: String) -> Bool? {
+    func bool(_ column: String) -> Bool? {
         if let index = nameToIndex[column] {
             return bool(index)
         }
@@ -353,15 +353,15 @@ class DatabaseRows {
         return nil
     }
 
-    func string(column: Int) -> String? {
+    func string(_ column: Int) -> String? {
         if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
-            return String.fromCString(UnsafePointer(sqlite3_column_text(stmt, Int32(column))))
+            return String(cString: UnsafePointer(sqlite3_column_text(stmt, Int32(column))))
         }
     }
 
-    func string(column: String) -> String? {
+    func string(_ column: String) -> String? {
         if let index = nameToIndex[column] {
             return string(index)
         }
@@ -369,18 +369,16 @@ class DatabaseRows {
         return nil
     }
 
-    func date(column: Int) -> NSDate? {
+    func date(_ column: Int) -> Date? {
         if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
-            if let str = String.fromCString(UnsafePointer(sqlite3_column_text(stmt, Int32(column)))) {
-                return dateFromString(str)
-            }
-            return nil
+            let str = String(cString: sqlite3_column_text(stmt, Int32(column)))
+            return dateFromString(str)
         }
     }
 
-    func date(column: String) -> NSDate? {
+    func date(_ column: String) -> Date? {
         if let index = nameToIndex[column] {
             return date(index)
         }
@@ -390,27 +388,27 @@ class DatabaseRows {
 
     // MARK:- Private
 
-    private var stmt: COpaquePointer
+    private var stmt: OpaquePointer
     private var closed: Bool = false
 
     private lazy var nameToIndex: [String:Int] = {
         var map = [String:Int]()
         let count = Int(sqlite3_column_count(self.stmt))
         for i in 0..<count {
-            let name = String.fromCString(sqlite3_column_name(self.stmt, Int32(i))) as String!
-            map[name] = i
+            let name = String(cString: sqlite3_column_name(self.stmt, Int32(i))) as String!
+            map[name!] = i
         }
         return map
     }()
 }
 
-class DatabaseError: ErrorType, CustomStringConvertible {
+class DatabaseError: Error, CustomStringConvertible {
     private(set) var code: Int
     private(set) var message: String
 
-    init(_ db: COpaquePointer) {
+    init(_ db: OpaquePointer) {
         code = Int(sqlite3_errcode(db))
-        message = String.fromCString(sqlite3_errmsg(db))!
+        message = String(cString: sqlite3_errmsg(db))
     }
 
     var description: String {
@@ -418,30 +416,30 @@ class DatabaseError: ErrorType, CustomStringConvertible {
     }
 }
 
-private func createStmt(db: COpaquePointer, _ sql: String) throws -> COpaquePointer {
-    var stmt: COpaquePointer = nil
+private func createStmt(_ db: OpaquePointer, _ sql: String) throws -> OpaquePointer {
+    var stmt: OpaquePointer? = nil
     if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) != SQLITE_OK {
         throw DatabaseError(db)
     }
-    return stmt
+    return stmt!
 }
 
-private func quote(str: String) -> String {
-    return str.stringByReplacingOccurrencesOfString("'", withString: "''")
+private func quote(_ str: String) -> String {
+    return str.replacingOccurrences(of: "'", with: "''")
 }
 
-private func dateToString(date: NSDate) -> String {
-    return dateFormatter.stringFromDate(date)
+private func dateToString(_ date: Date) -> String {
+    return dateFormatter.string(from: date)
 }
 
-private func dateFromString(str: String) -> NSDate? {
-    return dateFormatter.dateFromString(str)
+private func dateFromString(_ str: String) -> Date? {
+    return dateFormatter.date(from: str)
 }
 
-private var dateFormatter: NSDateFormatter = {
-    let formatter = NSDateFormatter()
-    formatter.locale =  NSLocale(localeIdentifier: "en_US_POSIX")
-    formatter.timeZone = NSTimeZone(abbreviation: "UTC")
+private var dateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.locale =  Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(abbreviation: "UTC")
     formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
     return formatter
 }()
