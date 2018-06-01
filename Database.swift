@@ -21,7 +21,7 @@ class Database {
     init(name: String) throws {
         let path = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
         file = path + "/" + name
-        if sqlite3_open(file, &db) != SQLITE_OK {
+        if sqlite3_open_v2(file, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) != SQLITE_OK {
             throw DatabaseError(db!)
         }
     }
