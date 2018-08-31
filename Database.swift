@@ -395,7 +395,7 @@ class DatabaseRows {
         var map = [String:Int]()
         let count = Int(sqlite3_column_count(self.stmt))
         for i in 0..<count {
-            let name = String(cString: sqlite3_column_name(self.stmt, Int32(i))) as String!
+            let name = String(cString: sqlite3_column_name(self.stmt, Int32(i))) as String?
             map[name!] = i
         }
         return map
