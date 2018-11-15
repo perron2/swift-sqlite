@@ -136,6 +136,24 @@ class Database {
         }
     }
 
+    func selectString(_ sql: String) throws -> String? {
+        let stmt = try createStmt(db!, sql)
+        defer { sqlite3_finalize(stmt) }
+
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return String(cString: UnsafePointer(sqlite3_column_text(stmt, Int32(0))))
+        } else {
+            throw DatabaseError(db!)
+        }
+    }
+
+    func selectDate(_ sql: String) throws -> Date? {
+        if let str = try selectString(sql) {
+            return dateFromString(str)
+        }
+        return nil
+    }
+
     func prepare(_ sql: String) throws -> DatabaseStatement {
         return try DatabaseStatement(db!, sql)
     }
@@ -291,6 +309,14 @@ class DatabaseRows {
             sqlite3_reset(stmt)
             closed = true
         }
+    }
+
+    func index(_ column: String) -> Int {
+        if let index = nameToIndex[column] {
+            return index
+        }
+        assertionFailure("Invalid column name \"\(column)\"")
+        return 0
     }
 
     func null(_ column: Int) -> Bool {
