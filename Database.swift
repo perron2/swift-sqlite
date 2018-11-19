@@ -200,9 +200,35 @@ class DatabaseStatement {
     func bind(_ name: String, _ value: Int?) {
         let index = sqlite3_bind_parameter_index(stmt, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
+        
+        if let value = value {
+            #if CGFLOAT_IS_DOUBLE
+                sqlite3_bind_int64(stmt, index, sqlite3_int64(value))
+            #else
+                sqlite3_bind_int(stmt, index, Int32(value))
+            #endif
+        } else {
+            sqlite3_bind_null(stmt, index)
+        }
+    }
+
+    func bind(_ name: String, _ value: Int32?) {
+        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        assert(index > 0, "Invalid parameter name \"\(name)\"")
 
         if let value = value {
             sqlite3_bind_int(stmt, index, Int32(value))
+        } else {
+            sqlite3_bind_null(stmt, index)
+        }
+    }
+
+    func bind(_ name: String, _ value: Int64?) {
+        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        assert(index > 0, "Invalid parameter name \"\(name)\"")
+
+        if let value = value {
+            sqlite3_bind_int64(stmt, index, sqlite3_int64(value))
         } else {
             sqlite3_bind_null(stmt, index)
         }
