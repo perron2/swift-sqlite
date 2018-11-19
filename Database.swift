@@ -168,6 +168,82 @@ class Database {
         }
     }
 
+    func insert(into table: String, values: ContentValues) throws -> Int64 {
+        var names = ""
+        var params = ""
+        for (index, value) in values.values.enumerated() {
+            if index > 0 {
+                names += ", "
+                params += ", "
+            }
+            names += value.name
+            params += ":" + value.name
+        }
+        let sql = "insert into \(table) (\(names)) values (\(params))"
+        let stmt = try prepare(sql)
+        for value in values.values {
+            switch value.value {
+            case nil:
+                stmt.bindNull(value.name)
+            case let val as String:
+                stmt.bind(value.name, val)
+            case let val as Int32:
+                stmt.bind(value.name, val)
+            case let val as Int64:
+                stmt.bind(value.name, val)
+            case let val as Double:
+                stmt.bind(value.name, val)
+            default:
+                stmt.bind(value.name, String(describing: value.value!))
+            }
+        }
+        try stmt.execute()
+        return lastInsertID
+    }
+
+    func update(into table: String, values: ContentValues, where whereClause: String, with whereArgs: ContentValue...) throws -> Int {
+        return try update(into: table, values: values, where: whereClause, with: whereArgs)
+    }
+
+    func update(into table: String, values: ContentValues, where whereClause: String, with whereArgs: [ContentValue]) throws -> Int {
+        var params = ""
+        for (index, value) in values.values.enumerated() {
+            if index > 0 {
+                params += ", "
+            }
+            params += value.name + "=:" + value.name
+        }
+        let sql = "update \(table) set \(params) where \(whereClause)"
+        let stmt = try prepare(sql)
+        values.add(whereArgs)
+        for value in values.values {
+            switch value.value {
+            case nil:
+                stmt.bindNull(value.name)
+            case let val as String:
+                stmt.bind(value.name, val)
+            case let val as Int32:
+                stmt.bind(value.name, val)
+            case let val as Int64:
+                stmt.bind(value.name, val)
+            case let val as Double:
+                stmt.bind(value.name, val)
+            default:
+                stmt.bind(value.name, String(describing: value.value!))
+            }
+        }
+        try stmt.execute()
+        return affectedRows
+    }
+
+    func save(into table: String, values: ContentValues, where whereClause: String, with whereArgs: ContentValue...) throws -> Int64? {
+        let affectedRows = try update(into: table, values: values, where: whereClause, with: whereArgs)
+        if affectedRows == 0 {
+            return try insert(into: table, values: values)
+        }
+        return nil
+    }
+
     private var db: OpaquePointer? = nil
 }
 
@@ -456,6 +532,93 @@ class DatabaseRows {
         }
         return map
     }()
+}
+
+struct ContentValue {
+    init(_ name: String, _ value: Any?) {
+        self.name = name
+        self.value = value
+    }
+
+    let name: String
+    let value: Any?
+}
+
+class ContentValues {
+    fileprivate var values = [ContentValue]()
+
+    func clear() {
+        values.removeAll()
+    }
+
+    func putNull(_ name: String) {
+        values.append(ContentValue(name, nil))
+    }
+
+    func put(_ name: String, _ value: String?) {
+        if let value = value {
+            values.append(ContentValue(name, value))
+        } else {
+            values.append(ContentValue(name, nil))
+        }
+    }
+
+    func put(_ name: String, _ value: Int?) {
+        if let value = value {
+            #if CGFLOAT_IS_DOUBLE
+            values.append(ContentValue(name, Int64(value)))
+            #else
+            values.append(ContentValue(name, Int32(value)))
+            #endif
+        } else {
+            values.append(ContentValue(name, nil))
+        }
+    }
+
+    func put(_ name: String, _ value: Int32?) {
+        if let value = value {
+            values.append(ContentValue(name, value))
+        } else {
+            values.append(ContentValue(name, nil))
+        }
+    }
+
+    func put(_ name: String, _ value: Int64?) {
+        if let value = value {
+            values.append(ContentValue(name, value))
+        } else {
+            values.append(ContentValue(name, nil))
+        }
+    }
+
+    func put(_ name: String, _ value: Double?) {
+        if let value = value {
+            values.append(ContentValue(name, value))
+        } else {
+            values.append(ContentValue(name, nil))
+        }
+    }
+
+    func put(_ name: String, _ value: Bool?) {
+        if let value = value {
+            let value: Int32 = value ? 1 : 0
+            values.append(ContentValue(name, value))
+        } else {
+            values.append(ContentValue(name, nil))
+        }
+    }
+
+    func put(_ name: String, _ value: Date?) {
+        if let value = value {
+            values.append(ContentValue(name, dateToString(value)))
+        } else {
+            values.append(ContentValue(name, nil))
+        }
+    }
+
+    func add(_ args: [ContentValue]) {
+        values += args
+    }
 }
 
 class DatabaseError: Error, CustomStringConvertible {
