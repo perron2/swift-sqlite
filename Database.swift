@@ -54,6 +54,10 @@ class Database {
         return sqlite3_last_insert_rowid(db)
     }
 
+    var affectedRows: Int {
+        return Int(sqlite3_changes(db))
+    }
+
     var changes: Int {
         return Int(sqlite3_changes(db))
     }
