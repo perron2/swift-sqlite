@@ -410,6 +410,10 @@ class DatabaseRows {
         }
     }
 
+    func rewind() {
+        sqlite3_reset(stmt)
+    }
+
     func close() {
         if !closed {
             sqlite3_reset(stmt)
