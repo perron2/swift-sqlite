@@ -7,14 +7,34 @@ class Database {
     let file: String
 
     struct TransactionContext {
-        fileprivate var db: Database
-        fileprivate var cancelled: Bool
+        private let db: Database
+        private let name: String
+        var cancelled = false
+
+        init(db: Database) {
+            self.db = db
+            self.name = db.quote(UUID().uuidString)
+        }
+
+        fileprivate func begin() throws {
+            try db.execute("savepoint \(name)")
+        }
+
+        fileprivate func commit() throws {
+            if !cancelled {
+                try db.execute("release savepoint \(name)")
+            }
+        }
+
+        fileprivate mutating func rollback() throws {
+            if !cancelled {
+                try db.execute("rollback to savepoint \(name)")
+                cancelled = true
+            }
+        }
 
         mutating func cancel() {
-            if !cancelled {
-                try! db.execute("rollback transaction")
-            }
-            self.cancelled = true
+            try! rollback()
         }
     }
 
@@ -90,41 +110,29 @@ class Database {
     }
 
     func transaction(_ block: () throws -> Void) throws {
-        try execute("begin transaction")
+        var context = TransactionContext(db: self)
+        try context.begin()
         do {
             try block()
-            try execute("commit transaction")
+            try context.commit()
         } catch {
-            try execute("rollback transaction")
+            try context.rollback()
             throw error
         }
     }
 
     func transaction(_ block: (inout TransactionContext) throws -> Void) throws -> Bool {
-        var context = TransactionContext(db: self, cancelled: false)
-        try execute("begin transaction")
+        var context = TransactionContext(db: self)
+        try context.begin()
         do {
             try block(&context)
             if context.cancelled {
                 return false
             }
-            try execute("commit transaction")
+            try context.commit()
             return true
         } catch {
-            try execute("rollback transaction")
-            throw error
-        }
-    }
-
-    func savepoint(_ name: String = UUID().uuidString, block: () throws -> Void) throws {
-        let name = quote(name)
-        let savepoint = "savepoint \(name)"
-        try execute(savepoint)
-        do {
-            try block()
-            try execute("release \(savepoint)")
-        } catch {
-            try execute("rollback to \(savepoint)")
+            try context.rollback()
             throw error
         }
     }
