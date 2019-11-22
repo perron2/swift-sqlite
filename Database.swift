@@ -137,6 +137,10 @@ class Database {
         }
     }
 
+    func applyWriteAheadLog() {
+        try! execute("pragma wal_checkpoint(FULL)")
+    }
+
     func selectInteger(_ sql: String) throws -> Int64 {
         let stmt = try createStmt(db!, sql)
         defer { sqlite3_finalize(stmt) }
