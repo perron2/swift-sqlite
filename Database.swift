@@ -118,6 +118,22 @@ class Database {
         }
     }
 
+    func upgradeSchema(targetVersion: Int, upgradeToVersion: (Int) throws -> Void) throws {
+        try transaction {
+            var version = userVersion
+            if version == 0 {
+                try upgradeToVersion(0)
+                userVersion = targetVersion
+            } else {
+                while version < targetVersion {
+                    version += 1
+                    try upgradeToVersion(version)
+                    userVersion = version
+                }
+            }
+        }
+    }
+
     func quote(_ str: String) -> String {
         return "'" + str.replacingOccurrences(of: "'", with: "''") + "'"
     }
@@ -267,6 +283,18 @@ class Database {
             return try insert(into: table, values: values)
         }
         return nil
+    }
+
+    func upsert(into table: String, values: ContentValues, idName: String) throws -> Int64 {
+        if let value = values[idName] as? NSNumber {
+            let id = value.int64Value
+            let count = try update(into: table, values: values, where: "\(idName) = \(id)")
+            if (count == 0) {
+                return try insert(into: table, values: values)
+            }
+            return id
+        }
+        return try insert(into: table, values: values)
     }
 
     private var db: OpaquePointer? = nil
@@ -648,11 +676,20 @@ class ContentValues {
     func add(_ args: [ContentValue]) {
         values += args
     }
+
+    subscript(name: String) -> Any? {
+        for value in values {
+            if value.name == name {
+                return value.value
+            }
+        }
+        return nil
+    }
 }
 
 class DatabaseError: Error, CustomStringConvertible {
-    private(set) var code: Int
-    private(set) var message: String
+    let code: Int
+    let message: String
 
     init(_ db: OpaquePointer) {
         code = Int(sqlite3_errcode(db))
