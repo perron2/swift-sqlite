@@ -510,6 +510,22 @@ class DatabaseRows {
         return nil
     }
 
+    func int64(_ column: Int) -> Int64? {
+        if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
+            return nil
+        } else {
+            return sqlite3_column_int64(stmt, Int32(column))
+        }
+    }
+
+    func int64(_ column: String) -> Int64? {
+        if let index = nameToIndex[column] {
+            return int64(index)
+        }
+        assertionFailure("Invalid column name \"\(column)\"")
+        return nil
+    }
+
     func double(_ column: Int) -> Double? {
         if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
             return nil
