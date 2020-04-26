@@ -95,6 +95,19 @@ class Database {
         }
     }
 
+    var writeAheadLogEnabled: Bool {
+        get {
+            if let mode = try! selectString("pragma journal_mode") {
+                return mode == "wal"
+            }
+            return false
+        }
+        set(value) {
+            let mode = value ? "wal" : "delete"
+            try! execute("pragma journal_mode = \(mode)")
+        }
+    }
+
     static func drop(_ name: String) {
         let path = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
         let file = path + "/" + name
@@ -138,7 +151,7 @@ class Database {
     }
 
     func applyWriteAheadLog() {
-        try! execute("pragma wal_checkpoint(FULL)")
+        try! execute("pragma wal_checkpoint(truncate)")
     }
 
     func selectInteger(_ sql: String) throws -> Int64 {
