@@ -510,6 +510,20 @@ class DatabaseRows {
         return nil
     }
 
+    func int<T>(_ column: Int, convert: (Int) -> T?) -> T? {
+        if let value = int(column) {
+            return convert(value)
+        }
+        return nil
+    }
+
+    func int<T>(_ column: String, convert: (Int) -> T?) -> T? {
+        if let value = int(column) {
+            return convert(value)
+        }
+        return nil
+    }
+
     func int64(_ column: Int) -> Int64? {
         if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
             return nil
@@ -523,6 +537,20 @@ class DatabaseRows {
             return int64(index)
         }
         assertionFailure("Invalid column name \"\(column)\"")
+        return nil
+    }
+
+    func int64<T>(_ column: Int, convert: (Int64) -> T?) -> T? {
+        if let value = int64(column) {
+            return convert(value)
+        }
+        return nil
+    }
+
+    func int64<T>(_ column: String, convert: (Int64) -> T?) -> T? {
+        if let value = int64(column) {
+            return convert(value)
+        }
         return nil
     }
 
@@ -571,6 +599,20 @@ class DatabaseRows {
             return string(index)
         }
         assertionFailure("Invalid column name \"\(column)\"")
+        return nil
+    }
+
+    func string<T>(_ column: Int, convert: (String) -> T?) -> T? {
+        if let value = string(column) {
+            return convert(value)
+        }
+        return nil
+    }
+
+    func string<T>(_ column: String, convert: (String) -> T?) -> T? {
+        if let value = string(column) {
+            return convert(value)
+        }
         return nil
     }
 
