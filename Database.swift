@@ -138,12 +138,13 @@ class Database {
         return "'" + str.replacingOccurrences(of: "'", with: "''") + "'"
     }
 
-    func transaction(_ block: () throws -> Void) throws {
+    func transaction<T>(_ block: () throws -> T) throws -> T {
         var context = TransactionContext(db: self)
         try context.begin()
         do {
-            try block()
+            let result = try block()
             try context.commit()
+            return result
         } catch {
             try context.rollback()
             throw error
