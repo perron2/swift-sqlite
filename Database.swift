@@ -41,9 +41,7 @@ class Database {
     init(name: String) throws {
         let path = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
         file = path + "/" + name
-        if sqlite3_open_v2(file, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) != SQLITE_OK {
-            throw DatabaseError(db!)
-        }
+        try open()
     }
 
     deinit {
@@ -51,9 +49,9 @@ class Database {
     }
 
     func close() {
-        if db != nil {
-            sqlite3_close(db)
-            db = nil
+        if _handle != nil {
+            sqlite3_close(_handle)
+            _handle = nil
         }
     }
 
@@ -71,19 +69,19 @@ class Database {
     }
 
     var lastInsertID: Int64 {
-        return sqlite3_last_insert_rowid(db)
+        return sqlite3_last_insert_rowid(handle)
     }
 
     var affectedRows: Int {
-        return Int(sqlite3_changes(db))
+        return Int(sqlite3_changes(handle))
     }
 
     var changes: Int {
-        return Int(sqlite3_changes(db))
+        return Int(sqlite3_changes(handle))
     }
 
     var totalChanges: Int {
-        return Int(sqlite3_total_changes(db))
+        return Int(sqlite3_total_changes(handle))
     }
 
     var foreignKeysEnabled: Bool = false {
@@ -172,24 +170,24 @@ class Database {
     }
 
     func selectInteger(_ sql: String) throws -> Int64 {
-        let stmt = try createStmt(db!, sql)
+        let stmt = try createStmt(handle, sql)
         defer { sqlite3_finalize(stmt) }
 
         if sqlite3_step(stmt) == SQLITE_ROW {
             return sqlite3_column_int64(stmt, 0)
         } else {
-            throw DatabaseError(db!)
+            throw DatabaseError(handle)
         }
     }
 
     func selectString(_ sql: String) throws -> String? {
-        let stmt = try createStmt(db!, sql)
+        let stmt = try createStmt(handle, sql)
         defer { sqlite3_finalize(stmt) }
 
         if sqlite3_step(stmt) == SQLITE_ROW {
             return String(cString: UnsafePointer(sqlite3_column_text(stmt, Int32(0))))
         } else {
-            throw DatabaseError(db!)
+            throw DatabaseError(handle)
         }
     }
 
@@ -201,12 +199,12 @@ class Database {
     }
 
     func prepare(_ sql: String) throws -> DatabaseStatement {
-        return try DatabaseStatement(db!, sql)
+        return try DatabaseStatement(handle, sql)
     }
 
     func execute(_ sql: String) throws {
-        if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
-            throw DatabaseError(db!)
+        if sqlite3_exec(handle, sql, nil, nil, nil) != SQLITE_OK {
+            throw DatabaseError(handle)
         }
     }
 
@@ -298,7 +296,19 @@ class Database {
         return try insert(into: table, values: values)
     }
 
-    private var db: OpaquePointer? = nil
+    private var _handle: OpaquePointer? = nil
+    private var handle: OpaquePointer {
+        if _handle == nil {
+            try! open()
+        }
+        return _handle!
+    }
+
+    private func open() throws {
+        if sqlite3_open_v2(file, &_handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) != SQLITE_OK {
+            throw DatabaseError(_handle!)
+        }
+    }
 }
 
 class DatabaseStatement {
