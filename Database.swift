@@ -13,7 +13,7 @@ class Database {
 
         init(db: Database) {
             self.db = db
-            self.name = db.quote(UUID().uuidString)
+            name = db.quote(UUID().uuidString)
         }
 
         fileprivate func begin() throws {
@@ -288,7 +288,7 @@ class Database {
         if let value = values[idName] as? NSNumber {
             let id = value.int64Value
             let count = try update(into: table, values: values, where: "\(idName) = \(id)")
-            if (count == 0) {
+            if count == 0 {
                 return try insert(into: table, values: values)
             }
             return id
@@ -296,7 +296,7 @@ class Database {
         return try insert(into: table, values: values)
     }
 
-    private var _handle: OpaquePointer? = nil
+    private var _handle: OpaquePointer?
     private var handle: OpaquePointer {
         if _handle == nil {
             try! open()
@@ -313,7 +313,7 @@ class Database {
 
 class DatabaseStatement {
     private var db: OpaquePointer
-    private var stmt: OpaquePointer? = nil
+    private var stmt: OpaquePointer?
 
     fileprivate init(_ db: OpaquePointer, _ sql: String) throws {
         self.db = db
@@ -340,7 +340,7 @@ class DatabaseStatement {
     func bind(_ name: String, _ value: Int?) {
         let index = sqlite3_bind_parameter_index(stmt, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
-        
+
         if let value = value {
             #if CGFLOAT_IS_DOUBLE
                 sqlite3_bind_int64(stmt, index, sqlite3_int64(value))
@@ -644,13 +644,13 @@ class DatabaseRows {
         return nil
     }
 
-    // MARK:- Private
+    // MARK: - Private
 
     private var stmt: OpaquePointer
     private var closed: Bool = false
 
-    private lazy var nameToIndex: [String:Int] = {
-        var map = [String:Int]()
+    private lazy var nameToIndex: [String: Int] = {
+        var map = [String: Int]()
         let count = Int(sqlite3_column_count(self.stmt))
         for i in 0..<count {
             let name = String(cString: sqlite3_column_name(self.stmt, Int32(i))) as String?
@@ -692,9 +692,9 @@ class ContentValues {
     func put(_ name: String, _ value: Int?) {
         if let value = value {
             #if CGFLOAT_IS_DOUBLE
-            values.append(ContentValue(name, Int64(value)))
+                values.append(ContentValue(name, Int64(value)))
             #else
-            values.append(ContentValue(name, Int32(value)))
+                values.append(ContentValue(name, Int32(value)))
             #endif
         } else {
             values.append(ContentValue(name, nil))
@@ -771,7 +771,7 @@ class DatabaseError: Error, CustomStringConvertible {
 }
 
 private func createStmt(_ db: OpaquePointer, _ sql: String) throws -> OpaquePointer {
-    var stmt: OpaquePointer? = nil
+    var stmt: OpaquePointer?
     if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) != SQLITE_OK {
         throw DatabaseError(db)
     }
@@ -792,7 +792,7 @@ private func dateFromString(_ str: String) -> Date? {
 
 private var dateFormatter: DateFormatter = {
     let formatter = DateFormatter()
-    formatter.locale =  Locale(identifier: "en_US_POSIX")
+    formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = TimeZone(abbreviation: "UTC")
     formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
     return formatter
