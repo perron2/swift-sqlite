@@ -462,12 +462,16 @@ class DatabaseRows {
         close()
     }
 
+    private(set) var hasRow = false
+
+    @discardableResult
     func next() throws -> Bool {
         let res = sqlite3_step(stmt)
         if res == SQLITE_DONE {
             close()
             return false
         } else if res == SQLITE_ROW {
+            hasRow = true
             return true
         } else {
             throw DatabaseError(sqlite3_db_handle(stmt))
@@ -482,6 +486,7 @@ class DatabaseRows {
         if !closed {
             sqlite3_reset(stmt)
             closed = true
+            hasRow = false
         }
     }
 
