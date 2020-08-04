@@ -266,6 +266,8 @@ class Database {
                 stmt.bind(value.name, val)
             case let val as Int64:
                 stmt.bind(value.name, val)
+            case let val as Float:
+                stmt.bind(value.name, val)
             case let val as Double:
                 stmt.bind(value.name, val)
             default:
@@ -369,6 +371,17 @@ class DatabaseStatement {
 
         if let value = value {
             sqlite3_bind_int64(stmt, index, sqlite3_int64(value))
+        } else {
+            sqlite3_bind_null(stmt, index)
+        }
+    }
+
+    func bind(_ name: String, _ value: Float?) {
+        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        assert(index > 0, "Invalid parameter name \"\(name)\"")
+
+        if let value = value {
+            sqlite3_bind_double(stmt, index, Double(value))
         } else {
             sqlite3_bind_null(stmt, index)
         }
@@ -570,6 +583,22 @@ class DatabaseRows {
         return nil
     }
 
+    func float(_ column: Int) -> Float? {
+        if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
+            return nil
+        } else {
+            return Float(sqlite3_column_double(stmt, Int32(column)))
+        }
+    }
+
+    func float(_ column: String) -> Float? {
+        if let index = nameToIndex[column] {
+            return float(index)
+        }
+        assertionFailure("Invalid column name \"\(column)\"")
+        return nil
+    }
+
     func double(_ column: Int) -> Double? {
         if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
             return nil
@@ -715,6 +744,14 @@ class ContentValues {
     }
 
     func put(_ name: String, _ value: Int64?) {
+        if let value = value {
+            values.append(ContentValue(name, value))
+        } else {
+            values.append(ContentValue(name, nil))
+        }
+    }
+
+    func put(_ name: String, _ value: Float?) {
         if let value = value {
             values.append(ContentValue(name, value))
         } else {
