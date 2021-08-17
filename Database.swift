@@ -117,6 +117,9 @@ class Database {
     }
 
     func upgradeSchema(targetVersion: Int, upgradeToVersion: (Int) throws -> Void) throws {
+        let foreignKeys = foreignKeysEnabled
+        foreignKeysEnabled = false
+        defer { foreignKeysEnabled = foreignKeys }
         try transaction {
             var version = userVersion
             if version == 0 {
