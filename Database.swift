@@ -84,7 +84,7 @@ class Database {
         return Int(sqlite3_total_changes(handle))
     }
 
-    var foreignKeysEnabled: Bool = false {
+    var foreignKeysEnabled = false {
         didSet {
             if foreignKeysEnabled != oldValue {
                 let value = foreignKeysEnabled ? "on" : "off"
@@ -684,7 +684,7 @@ class DatabaseRows {
     // MARK: - Private
 
     private var stmt: OpaquePointer
-    private var closed: Bool = false
+    private var closed = false
 
     private lazy var nameToIndex: [String: Int] = {
         var map = [String: Int]()
