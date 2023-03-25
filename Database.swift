@@ -183,6 +183,12 @@ class Database {
         }
     }
 
+    func selectInteger(_ sql: String, _ params: Param...) throws -> Int64 {
+        let stmt = try prepare(sql)
+        stmt.bind(params)
+        return try stmt.int()
+    }
+
     func selectString(_ sql: String) throws -> String? {
         let stmt = try createStmt(handle, sql)
         defer { sqlite3_finalize(stmt) }
@@ -192,6 +198,12 @@ class Database {
         } else {
             throw DatabaseError(handle)
         }
+    }
+
+    func selectString(_ sql: String, _ params: Param...) throws -> String? {
+        let stmt = try prepare(sql)
+        stmt.bind(params)
+        return try stmt.string()
     }
 
     func selectDate(_ sql: String) throws -> Date? {
@@ -211,6 +223,18 @@ class Database {
         }
     }
 
+    func execute(_ sql: String, _ params: Param...) throws {
+        let stmt = try prepare(sql)
+        stmt.bind(params)
+        try stmt.execute()
+    }
+
+    func query(_ sql: String, _ params: Param...) throws -> DatabaseRows {
+        let stmt = try prepare(sql)
+        stmt.bind(params)
+        return stmt.query()
+    }
+
     func insert(into table: String, values: ContentValues) throws -> Int64 {
         var names = ""
         var params = ""
@@ -226,18 +250,18 @@ class Database {
         let stmt = try prepare(sql)
         for value in values.values {
             switch value.value {
-            case nil:
-                stmt.bindNull(value.name)
-            case let val as String:
-                stmt.bind(value.name, val)
-            case let val as Int32:
-                stmt.bind(value.name, val)
-            case let val as Int64:
-                stmt.bind(value.name, val)
-            case let val as Double:
-                stmt.bind(value.name, val)
-            default:
-                stmt.bind(value.name, String(describing: value.value!))
+                case nil:
+                    stmt.bindNull(value.name)
+                case let val as String:
+                    stmt.bind(value.name, val)
+                case let val as Int32:
+                    stmt.bind(value.name, val)
+                case let val as Int64:
+                    stmt.bind(value.name, val)
+                case let val as Double:
+                    stmt.bind(value.name, val)
+                default:
+                    stmt.bind(value.name, String(describing: value.value!))
             }
         }
         try stmt.execute()
@@ -261,20 +285,20 @@ class Database {
         values.add(whereArgs)
         for value in values.values {
             switch value.value {
-            case nil:
-                stmt.bindNull(value.name)
-            case let val as String:
-                stmt.bind(value.name, val)
-            case let val as Int32:
-                stmt.bind(value.name, val)
-            case let val as Int64:
-                stmt.bind(value.name, val)
-            case let val as Float:
-                stmt.bind(value.name, val)
-            case let val as Double:
-                stmt.bind(value.name, val)
-            default:
-                stmt.bind(value.name, String(describing: value.value!))
+                case nil:
+                    stmt.bindNull(value.name)
+                case let val as String:
+                    stmt.bind(value.name, val)
+                case let val as Int32:
+                    stmt.bind(value.name, val)
+                case let val as Int64:
+                    stmt.bind(value.name, val)
+                case let val as Float:
+                    stmt.bind(value.name, val)
+                case let val as Double:
+                    stmt.bind(value.name, val)
+                default:
+                    stmt.bind(value.name, String(describing: value.value!))
             }
         }
         try stmt.execute()
@@ -431,6 +455,27 @@ class DatabaseStatement {
             sqlite3_bind_text(stmt, index, dateToString(value), -1, SQLITE_TRANSIENT)
         } else {
             sqlite3_bind_null(stmt, index)
+        }
+    }
+
+    func bind(_ params: [Param]) {
+        for param in params {
+            let name = param.name
+            let value = param.value
+            switch value {
+                case let value as Int: bind(name, value)
+                case let value as Int32: bind(name, value)
+                case let value as Int64: bind(name, value)
+                case let value as Float: bind(name, value)
+                case let value as Double: bind(name, value)
+                case let value as Bool: bind(name, value)
+                case let value as String: bind(name, value)
+                case let value as Date: bind(name, value)
+                default:
+                    let type = String(describing: value)
+                    let value = value.debugDescription
+                    fatalError("Cannot bind value \(value) of type \(type) to placeholder \"\(name)\"")
+            }
         }
     }
 
@@ -650,16 +695,16 @@ class DatabaseRows {
         return nil
     }
 
-    func string<T>(_ column: Int, convert: (String) -> T?) -> T? {
+    func string<T>(_ column: Int, convert: (String) throws -> T?) rethrows -> T? {
         if let value = string(column) {
-            return convert(value)
+            return try convert(value)
         }
         return nil
     }
 
-    func string<T>(_ column: String, convert: (String) -> T?) -> T? {
+    func string<T>(_ column: String, convert: (String) throws -> T?) rethrows -> T? {
         if let value = string(column) {
-            return convert(value)
+            return try convert(value)
         }
         return nil
     }
@@ -695,6 +740,16 @@ class DatabaseRows {
         }
         return map
     }()
+}
+
+struct Param {
+    init(_ name: String, _ value: Any?) {
+        self.name = name
+        self.value = value
+    }
+
+    let name: String
+    let value: Any?
 }
 
 struct ContentValue {
