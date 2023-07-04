@@ -343,21 +343,30 @@ class Database {
 class DatabaseStatement {
     private var db: OpaquePointer
     private var stmt: OpaquePointer?
+    private(set) var closed = false
 
     fileprivate init(_ db: OpaquePointer, _ sql: String) throws {
         self.db = db
-
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) != SQLITE_OK {
             throw DatabaseError(db)
         }
     }
 
     deinit {
-        sqlite3_finalize(stmt)
+        close()
+    }
+
+    func close() {
+        if !closed {
+            sqlite3_finalize(stmt)
+            closed = true
+        }
     }
 
     func reset() {
-        sqlite3_reset(stmt)
+        if !closed {
+            sqlite3_reset(stmt)
+        }
     }
 
     func bindNull(_ name: String) {
@@ -541,14 +550,11 @@ class DatabaseRows {
 
     func rewind() {
         sqlite3_reset(stmt)
+        hasRow = false
     }
 
     func close() {
-        if !closed {
-            sqlite3_reset(stmt)
-            closed = true
-            hasRow = false
-        }
+        hasRow = false
     }
 
     func index(_ column: String) -> Int {
