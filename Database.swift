@@ -139,6 +139,7 @@ class Database {
         return "'" + str.replacingOccurrences(of: "'", with: "''") + "'"
     }
 
+    @discardableResult
     func transaction<T>(_ block: () throws -> T) throws -> T {
         var context = TransactionContext(db: self)
         try context.begin()
