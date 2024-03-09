@@ -4,48 +4,21 @@ private let SQLITE_STATIC = unsafeBitCast(0, to: sqlite3_destructor_type.self)
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 class Database {
-    let file: String
+    let file: URL
 
-    struct TransactionContext {
-        private let db: Database
-        private let name: String
-        var cancelled = false
-
-        init(db: Database) {
-            self.db = db
-            name = db.quote(UUID().uuidString)
-        }
-
-        fileprivate func begin() throws {
-            try db.execute("savepoint \(name)")
-        }
-
-        fileprivate func commit() throws {
-            if !cancelled {
-                try db.execute("release savepoint \(name)")
-            }
-        }
-
-        fileprivate mutating func rollback() throws {
-            if !cancelled {
-                try db.execute("rollback to savepoint \(name)")
-                cancelled = true
-            }
-        }
-
-        mutating func cancel() {
-            try! rollback()
-        }
-    }
-
-    init(name: String) throws {
-        let path = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true).first!
-        file = path + "/" + name
+    init(file: URL) throws {
+        self.file = file
         try open()
     }
 
     deinit {
         close()
+    }
+
+    func open() throws {
+        if sqlite3_open_v2(file.path, &_handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) != SQLITE_OK {
+            throw DatabaseError(_handle!)
+        }
     }
 
     func close() {
@@ -135,38 +108,28 @@ class Database {
         }
     }
 
-    func quote(_ str: String) -> String {
-        return "'" + str.replacingOccurrences(of: "'", with: "''") + "'"
-    }
-
     @discardableResult
     func transaction<T>(_ block: () throws -> T) throws -> T {
-        var context = TransactionContext(db: self)
-        try context.begin()
-        do {
-            let result = try block()
-            try context.commit()
-            return result
-        } catch {
-            try context.rollback()
-            throw error
+        return try serializeWriteAccess {
+            let insideTransaction = transactionDepth > 0
+            transactionDepth += 1
+            let savepoint = "s\(transactionDepth)"
+            try execute(insideTransaction ? "savepoint \(savepoint)" : "begin")
+            do {
+                let result = try block()
+                try execute(insideTransaction ? "release savepoint \(savepoint)" : "commit")
+                transactionDepth -= 1
+                return result
+            } catch {
+                try execute(insideTransaction ? "rollback to savepoint \(savepoint)" : "rollback")
+                transactionDepth -= 1
+                throw error
+            }
         }
     }
 
-    func transaction(_ block: (inout TransactionContext) throws -> Void) throws -> Bool {
-        var context = TransactionContext(db: self)
-        try context.begin()
-        do {
-            try block(&context)
-            if context.cancelled {
-                return false
-            }
-            try context.commit()
-            return true
-        } catch {
-            try context.rollback()
-            throw error
-        }
+    func quote(_ str: String) -> String {
+        return "'" + str.replacingOccurrences(of: "'", with: "''") + "'"
     }
 
     func applyWriteAheadLog() {
@@ -219,15 +182,19 @@ class Database {
     }
 
     func execute(_ sql: String) throws {
-        if sqlite3_exec(handle, sql, nil, nil, nil) != SQLITE_OK {
-            throw DatabaseError(handle)
+        try serializeWriteAccess {
+            if sqlite3_exec(handle, sql, nil, nil, nil) != SQLITE_OK {
+                throw DatabaseError(handle)
+            }
         }
     }
 
     func execute(_ sql: String, _ params: Param...) throws {
-        let stmt = try prepare(sql)
-        stmt.bind(params)
-        try stmt.execute()
+        try serializeWriteAccess {
+            let stmt = try prepare(sql)
+            stmt.bind(params)
+            try stmt.execute()
+        }
     }
 
     func query(_ sql: String, _ params: Param...) throws -> DatabaseRows {
@@ -248,29 +215,33 @@ class Database {
             params += ":" + value.name
         }
         let sql = "insert into \(table) (\(names)) values (\(params))"
-        let stmt = try prepare(sql)
-        for value in values.values {
-            switch value.value {
-                case nil:
-                    stmt.bindNull(value.name)
-                case let val as String:
-                    stmt.bind(value.name, val)
-                case let val as Int32:
-                    stmt.bind(value.name, val)
-                case let val as Int64:
-                    stmt.bind(value.name, val)
-                case let val as Double:
-                    stmt.bind(value.name, val)
-                default:
-                    stmt.bind(value.name, String(describing: value.value!))
+        return try serializeWriteAccess {
+            let stmt = try prepare(sql)
+            for value in values.values {
+                switch value.value {
+                    case nil:
+                        stmt.bindNull(value.name)
+                    case let val as String:
+                        stmt.bind(value.name, val)
+                    case let val as Int32:
+                        stmt.bind(value.name, val)
+                    case let val as Int64:
+                        stmt.bind(value.name, val)
+                    case let val as Double:
+                        stmt.bind(value.name, val)
+                    default:
+                        stmt.bind(value.name, String(describing: value.value!))
+                }
             }
+            try stmt.execute()
+            return lastInsertID
         }
-        try stmt.execute()
-        return lastInsertID
     }
 
     func update(into table: String, values: ContentValues, where whereClause: String, with whereArgs: ContentValue...) throws -> Int {
-        return try update(into: table, values: values, where: whereClause, with: whereArgs)
+        return try serializeWriteAccess {
+            return try update(into: table, values: values, where: whereClause, with: whereArgs)
+        }
     }
 
     func update(into table: String, values: ContentValues, where whereClause: String, with whereArgs: [ContentValue]) throws -> Int {
@@ -282,48 +253,54 @@ class Database {
             params += value.name + "=:" + value.name
         }
         let sql = "update \(table) set \(params) where \(whereClause)"
-        let stmt = try prepare(sql)
-        values.add(whereArgs)
-        for value in values.values {
-            switch value.value {
-                case nil:
-                    stmt.bindNull(value.name)
-                case let val as String:
-                    stmt.bind(value.name, val)
-                case let val as Int32:
-                    stmt.bind(value.name, val)
-                case let val as Int64:
-                    stmt.bind(value.name, val)
-                case let val as Float:
-                    stmt.bind(value.name, val)
-                case let val as Double:
-                    stmt.bind(value.name, val)
-                default:
-                    stmt.bind(value.name, String(describing: value.value!))
+        return try serializeWriteAccess {
+            let stmt = try prepare(sql)
+            values.add(whereArgs)
+            for value in values.values {
+                switch value.value {
+                    case nil:
+                        stmt.bindNull(value.name)
+                    case let val as String:
+                        stmt.bind(value.name, val)
+                    case let val as Int32:
+                        stmt.bind(value.name, val)
+                    case let val as Int64:
+                        stmt.bind(value.name, val)
+                    case let val as Float:
+                        stmt.bind(value.name, val)
+                    case let val as Double:
+                        stmt.bind(value.name, val)
+                    default:
+                        stmt.bind(value.name, String(describing: value.value!))
+                }
             }
+            try stmt.execute()
+            return affectedRows
         }
-        try stmt.execute()
-        return affectedRows
     }
 
     func save(into table: String, values: ContentValues, where whereClause: String, with whereArgs: ContentValue...) throws -> Int64? {
-        let affectedRows = try update(into: table, values: values, where: whereClause, with: whereArgs)
-        if affectedRows == 0 {
-            return try insert(into: table, values: values)
+        return try serializeWriteAccess {
+            let affectedRows = try update(into: table, values: values, where: whereClause, with: whereArgs)
+            if affectedRows == 0 {
+                return try insert(into: table, values: values)
+            }
+            return nil
         }
-        return nil
     }
 
     func upsert(into table: String, values: ContentValues, idName: String) throws -> Int64 {
-        if let value = values[idName] as? NSNumber {
-            let id = value.int64Value
-            let count = try update(into: table, values: values, where: "\(idName) = \(id)")
-            if count == 0 {
-                return try insert(into: table, values: values)
+        return try serializeWriteAccess {
+            if let value = values[idName] as? NSNumber {
+                let id = value.int64Value
+                let count = try update(into: table, values: values, where: "\(idName) = \(id)")
+                if count == 0 {
+                    return try insert(into: table, values: values)
+                }
+                return id
             }
-            return id
+            return try insert(into: table, values: values)
         }
-        return try insert(into: table, values: values)
     }
 
     private var _handle: OpaquePointer?
@@ -334,10 +311,24 @@ class Database {
         return _handle!
     }
 
-    private func open() throws {
-        if sqlite3_open_v2(file, &_handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX, nil) != SQLITE_OK {
-            throw DatabaseError(_handle!)
+    private let semaphore = DispatchSemaphore(value: 1)
+    private var transactionDepth = 0
+
+    private func serializeWriteAccess<T>(_ block: () throws -> T) throws -> T {
+        let semaphoreAcquired = Thread.current.threadDictionary["acquired"] as? Bool ?? false
+        defer {
+            if !semaphoreAcquired {
+                Thread.current.threadDictionary["acquired"] = false
+                print("SEMAPHORE RELEASED in \(Thread.current)")
+                semaphore.signal()
+            }
         }
+        if !semaphoreAcquired {
+            Thread.current.threadDictionary["acquired"] = true
+            semaphore.wait()
+            print("SEMAPHORE ACQUIRED in \(Thread.current)")
+        }
+        return try block()
     }
 }
 
