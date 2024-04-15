@@ -319,27 +319,25 @@ class Database {
         defer {
             if !semaphoreAcquired {
                 Thread.current.threadDictionary["acquired"] = false
-                print("SEMAPHORE RELEASED in \(Thread.current)")
                 semaphore.signal()
             }
         }
         if !semaphoreAcquired {
             Thread.current.threadDictionary["acquired"] = true
             semaphore.wait()
-            print("SEMAPHORE ACQUIRED in \(Thread.current)")
         }
         return try block()
     }
 }
 
 class DatabaseStatement {
-    private var db: OpaquePointer
-    private var stmt: OpaquePointer?
+    private var dbHandle: OpaquePointer
+    fileprivate var handle: OpaquePointer?
     private(set) var closed = false
 
     fileprivate init(_ db: OpaquePointer, _ sql: String) throws {
-        self.db = db
-        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) != SQLITE_OK {
+        dbHandle = db
+        if sqlite3_prepare_v2(db, sql, -1, &handle, nil) != SQLITE_OK {
             throw DatabaseError(db)
         }
     }
@@ -350,112 +348,112 @@ class DatabaseStatement {
 
     func close() {
         if !closed {
-            sqlite3_finalize(stmt)
+            sqlite3_finalize(handle)
             closed = true
         }
     }
 
     func reset() {
         if !closed {
-            sqlite3_reset(stmt)
+            sqlite3_reset(handle)
         }
     }
 
     func bindNull(_ name: String) {
-        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        let index = sqlite3_bind_parameter_index(handle, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
-        sqlite3_bind_null(stmt, index)
+        sqlite3_bind_null(handle, index)
     }
 
     func bind(_ name: String, _ value: Int?) {
-        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        let index = sqlite3_bind_parameter_index(handle, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
         if let value = value {
             #if CGFLOAT_IS_DOUBLE
-                sqlite3_bind_int64(stmt, index, sqlite3_int64(value))
+                sqlite3_bind_int64(handle, index, sqlite3_int64(value))
             #else
-                sqlite3_bind_int(stmt, index, Int32(value))
+                sqlite3_bind_int(handle, index, Int32(value))
             #endif
         } else {
-            sqlite3_bind_null(stmt, index)
+            sqlite3_bind_null(handle, index)
         }
     }
 
     func bind(_ name: String, _ value: Int32?) {
-        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        let index = sqlite3_bind_parameter_index(handle, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
         if let value = value {
-            sqlite3_bind_int(stmt, index, Int32(value))
+            sqlite3_bind_int(handle, index, Int32(value))
         } else {
-            sqlite3_bind_null(stmt, index)
+            sqlite3_bind_null(handle, index)
         }
     }
 
     func bind(_ name: String, _ value: Int64?) {
-        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        let index = sqlite3_bind_parameter_index(handle, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
         if let value = value {
-            sqlite3_bind_int64(stmt, index, sqlite3_int64(value))
+            sqlite3_bind_int64(handle, index, sqlite3_int64(value))
         } else {
-            sqlite3_bind_null(stmt, index)
+            sqlite3_bind_null(handle, index)
         }
     }
 
     func bind(_ name: String, _ value: Float?) {
-        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        let index = sqlite3_bind_parameter_index(handle, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
         if let value = value {
-            sqlite3_bind_double(stmt, index, Double(value))
+            sqlite3_bind_double(handle, index, Double(value))
         } else {
-            sqlite3_bind_null(stmt, index)
+            sqlite3_bind_null(handle, index)
         }
     }
 
     func bind(_ name: String, _ value: Double?) {
-        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        let index = sqlite3_bind_parameter_index(handle, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
         if let value = value {
-            sqlite3_bind_double(stmt, index, value)
+            sqlite3_bind_double(handle, index, value)
         } else {
-            sqlite3_bind_null(stmt, index)
+            sqlite3_bind_null(handle, index)
         }
     }
 
     func bind(_ name: String, _ value: Bool?) {
-        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        let index = sqlite3_bind_parameter_index(handle, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
         if let value = value {
-            sqlite3_bind_int(stmt, index, value ? 1 : 0)
+            sqlite3_bind_int(handle, index, value ? 1 : 0)
         } else {
-            sqlite3_bind_null(stmt, index)
+            sqlite3_bind_null(handle, index)
         }
     }
 
     func bind(_ name: String, _ value: String?) {
-        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        let index = sqlite3_bind_parameter_index(handle, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
         if let value = value {
-            sqlite3_bind_text(stmt, index, value, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(handle, index, value, -1, SQLITE_TRANSIENT)
         } else {
-            sqlite3_bind_null(stmt, index)
+            sqlite3_bind_null(handle, index)
         }
     }
 
     func bind(_ name: String, _ value: Date?) {
-        let index = sqlite3_bind_parameter_index(stmt, ":" + name)
+        let index = sqlite3_bind_parameter_index(handle, ":" + name)
         assert(index > 0, "Invalid parameter name \"\(name)\"")
 
         if let value = value {
-            sqlite3_bind_text(stmt, index, dateToString(value), -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(handle, index, dateToString(value), -1, SQLITE_TRANSIENT)
         } else {
-            sqlite3_bind_null(stmt, index)
+            sqlite3_bind_null(handle, index)
         }
     }
 
@@ -481,42 +479,42 @@ class DatabaseStatement {
     }
 
     func execute() throws {
-        if sqlite3_step(stmt) != SQLITE_DONE {
-            throw DatabaseError(db)
+        if sqlite3_step(handle) != SQLITE_DONE {
+            throw DatabaseError(dbHandle)
         }
-        sqlite3_reset(stmt)
+        sqlite3_reset(handle)
     }
 
     func query() -> DatabaseRows {
-        return DatabaseRows(stmt!)
+        return DatabaseRows(self)
     }
 
     func string() throws -> String? {
-        let result = sqlite3_step(stmt)
+        let result = sqlite3_step(handle)
         if result == SQLITE_DONE {
             return nil
         } else if result == SQLITE_ROW {
-            if sqlite3_column_type(stmt, Int32(0)) == SQLITE_NULL {
+            if sqlite3_column_type(handle, Int32(0)) == SQLITE_NULL {
                 return nil
             } else {
-                return String(cString: UnsafePointer(sqlite3_column_text(stmt, Int32(0))))
+                return String(cString: UnsafePointer(sqlite3_column_text(handle, Int32(0))))
             }
         } else {
-            throw DatabaseError(db)
+            throw DatabaseError(dbHandle)
         }
     }
 
     func int() throws -> Int64 {
-        if sqlite3_step(stmt) == SQLITE_ROW {
-            return sqlite3_column_int64(stmt, 0)
+        if sqlite3_step(handle) == SQLITE_ROW {
+            return sqlite3_column_int64(handle, 0)
         } else {
-            throw DatabaseError(db)
+            throw DatabaseError(dbHandle)
         }
     }
 }
 
 class DatabaseRows {
-    init(_ stmt: OpaquePointer) {
+    init(_ stmt: DatabaseStatement) {
         self.stmt = stmt
     }
 
@@ -528,7 +526,7 @@ class DatabaseRows {
 
     @discardableResult
     func next() throws -> Bool {
-        let res = sqlite3_step(stmt)
+        let res = sqlite3_step(stmt.handle)
         if res == SQLITE_DONE {
             close()
             return false
@@ -536,12 +534,12 @@ class DatabaseRows {
             hasRow = true
             return true
         } else {
-            throw DatabaseError(sqlite3_db_handle(stmt))
+            throw DatabaseError(sqlite3_db_handle(stmt.handle))
         }
     }
 
     func rewind() {
-        sqlite3_reset(stmt)
+        sqlite3_reset(stmt.handle)
         hasRow = false
     }
 
@@ -558,7 +556,7 @@ class DatabaseRows {
     }
 
     func null(_ column: Int) -> Bool {
-        return sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL
+        return sqlite3_column_type(stmt.handle, Int32(column)) == SQLITE_NULL
     }
 
     func null(_ column: String) -> Bool {
@@ -570,10 +568,10 @@ class DatabaseRows {
     }
 
     func int(_ column: Int) -> Int? {
-        if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
+        if sqlite3_column_type(stmt.handle, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
-            return Int(sqlite3_column_int64(stmt, Int32(column)))
+            return Int(sqlite3_column_int64(stmt.handle, Int32(column)))
         }
     }
 
@@ -600,10 +598,10 @@ class DatabaseRows {
     }
 
     func int64(_ column: Int) -> Int64? {
-        if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
+        if sqlite3_column_type(stmt.handle, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
-            return sqlite3_column_int64(stmt, Int32(column))
+            return sqlite3_column_int64(stmt.handle, Int32(column))
         }
     }
 
@@ -630,10 +628,10 @@ class DatabaseRows {
     }
 
     func float(_ column: Int) -> Float? {
-        if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
+        if sqlite3_column_type(stmt.handle, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
-            return Float(sqlite3_column_double(stmt, Int32(column)))
+            return Float(sqlite3_column_double(stmt.handle, Int32(column)))
         }
     }
 
@@ -646,10 +644,10 @@ class DatabaseRows {
     }
 
     func double(_ column: Int) -> Double? {
-        if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
+        if sqlite3_column_type(stmt.handle, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
-            return sqlite3_column_double(stmt, Int32(column))
+            return sqlite3_column_double(stmt.handle, Int32(column))
         }
     }
 
@@ -662,10 +660,10 @@ class DatabaseRows {
     }
 
     func bool(_ column: Int) -> Bool? {
-        if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
+        if sqlite3_column_type(stmt.handle, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
-            return sqlite3_column_int(stmt, Int32(column)) == 1
+            return sqlite3_column_int(stmt.handle, Int32(column)) == 1
         }
     }
 
@@ -678,10 +676,10 @@ class DatabaseRows {
     }
 
     func string(_ column: Int) -> String? {
-        if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
+        if sqlite3_column_type(stmt.handle, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
-            return String(cString: UnsafePointer(sqlite3_column_text(stmt, Int32(column))))
+            return String(cString: UnsafePointer(sqlite3_column_text(stmt.handle, Int32(column))))
         }
     }
 
@@ -708,10 +706,10 @@ class DatabaseRows {
     }
 
     func date(_ column: Int) -> Date? {
-        if sqlite3_column_type(stmt, Int32(column)) == SQLITE_NULL {
+        if sqlite3_column_type(stmt.handle, Int32(column)) == SQLITE_NULL {
             return nil
         } else {
-            let str = String(cString: sqlite3_column_text(stmt, Int32(column)))
+            let str = String(cString: sqlite3_column_text(stmt.handle, Int32(column)))
             return dateFromString(str)
         }
     }
@@ -726,14 +724,14 @@ class DatabaseRows {
 
     // MARK: - Private
 
-    private var stmt: OpaquePointer
+    private var stmt: DatabaseStatement
     private var closed = false
 
     private lazy var nameToIndex: [String: Int] = {
         var map = [String: Int]()
-        let count = Int(sqlite3_column_count(self.stmt))
+        let count = Int(sqlite3_column_count(self.stmt.handle))
         for i in 0..<count {
-            let name = String(cString: sqlite3_column_name(self.stmt, Int32(i))) as String?
+            let name = String(cString: sqlite3_column_name(self.stmt.handle, Int32(i))) as String?
             map[name!] = i
         }
         return map
